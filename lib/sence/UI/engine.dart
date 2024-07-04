@@ -1,16 +1,19 @@
-// ignore_for_file: depend_on_referenced_packages, avoid_print
+// ignore_for_file: depend_on_referenced_packages, avoid_print, library_private_types_in_public_api, prefer_const_constructors
 
 import 'dart:ffi';
+import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import 'package:glfw3/glfw3.dart';
 
 void windowPosCallback(Pointer<GLFWwindow> window, int xpos, int ypos) {
-  print('windowPosCallback: ' 'xpos=$xpos ypos=$ypos');
+  print('windowPosCallback: xpos=$xpos ypos=$ypos');
 }
 
 void windowSizeCallback(Pointer<GLFWwindow> window, int width, int height) {
-  print('windowSizeCallback: ' 'width=$width height=$height');
+  // ignore: duplicate_ignore
+  // ignore: avoid_print
+  print('windowSizeCallback: width=$width height=$height');
 }
 
 void windowCloseCallback(Pointer<GLFWwindow> window) {
@@ -22,27 +25,27 @@ void windowRefreshCallback(Pointer<GLFWwindow> window) {
 }
 
 void windowFocusCallback(Pointer<GLFWwindow> window, int focused) {
-  print('windowFocusCallback: ' 'focused=$focused');
+  print('windowFocusCallback: focused=$focused');
 }
 
 void windowIconifyCallback(Pointer<GLFWwindow> window, int iconified) {
-  print('windowIconifyCallback: ' 'iconified=$iconified');
+  print('windowIconifyCallback: iconified=$iconified');
 }
 
 void windowMaximizeCallback(Pointer<GLFWwindow> window, int maximized) {
-  print('windowMaximizeCallback: ' 'maximized=$maximized');
+  print('windowMaximizeCallback: maximized=$maximized');
 }
 
 void framebufferSizeCallback(Pointer<GLFWwindow> window, int width, int height) {
-  print('framebufferSizeCallback: ' 'width=$width height=$height');
+  print('framebufferSizeCallback: width=$width height=$height');
 }
 
 void windowContentScaleCallback(Pointer<GLFWwindow> window, double xscale, double yscale) {
-  print('windowContentScaleCallback: ' 'xscale=$xscale yscale=$yscale');
+  print('windowContentScaleCallback: xscale=$xscale yscale=$yscale');
 }
 
 void mouseButtonCallback(Pointer<GLFWwindow> window, int button, int action, int mods) {
-  print('mouseCallback: ' 'button=$button action=$action mods=$mods');
+  print('mouseCallback: button=$button action=$action mods=$mods');
 }
 
 void cursorPosCallback(Pointer<GLFWwindow> window, double xpos, double ypos) {
@@ -58,7 +61,7 @@ void scrollCallback(Pointer<GLFWwindow> window, double xoffset, double yoffset) 
 }
 
 void keyCallback(Pointer<GLFWwindow> window, int key, int scancode, int action, int mods) {
-  print('keyCallback: ' 'key=$key scancode=$scancode action=$action mods=$mods');
+  print('keyCallback: key=$key scancode=$scancode action=$action mods=$mods');
 }
 
 void charCallback(Pointer<GLFWwindow> window, int codepoint) {
@@ -67,7 +70,6 @@ void charCallback(Pointer<GLFWwindow> window, int codepoint) {
 
 void charModsCallback(Pointer<GLFWwindow> window, int codepoint, int mods) {
   print('charModsCallback: codepoint=${String.fromCharCode(codepoint)} mods=$mods');
-
 }
 
 void dropCallback(Pointer<GLFWwindow> window, int pathCount, Pointer<Pointer<Utf8>> paths) {
@@ -77,15 +79,18 @@ void dropCallback(Pointer<GLFWwindow> window, int pathCount, Pointer<Pointer<Utf
   }
 }
 
-int engine() {
+void engine(SendPort sendPort) {
   if (glfwInit() == GLFW_FALSE) {
-    return -1;
+    sendPort.send(-1);
+    return;
   }
   var window = glfwCreateWindow(640, 480, glfwGetVersionString(), nullptr, nullptr);
   if (window == nullptr) {
     glfwTerminate();
-    return -1;
+    sendPort.send(-1);
+    return;
   }
+
   glfwSetWindowPosCallback(window, Pointer.fromFunction(windowPosCallback));
   glfwSetWindowSizeCallback(window, Pointer.fromFunction(windowSizeCallback));
   glfwSetWindowCloseCallback(window, Pointer.fromFunction(windowCloseCallback));
@@ -102,22 +107,54 @@ int engine() {
   glfwSetCharCallback(window, Pointer.fromFunction(charCallback));
   glfwSetCharModsCallback(window, Pointer.fromFunction(charModsCallback));
   glfwSetDropCallback(window, Pointer.fromFunction(dropCallback));
+
   while (glfwWindowShouldClose(window) == GLFW_FALSE) {
     glfwSwapBuffers(window);
     glfwWaitEvents();
   }
   glfwTerminate();
-  return 0;
+  sendPort.send(0);
 }
 
-class Engine extends StatelessWidget {
+class Engine extends StatefulWidget {
   const Engine({super.key});
 
   @override
+  _EngineState createState() => _EngineState();
+}
+
+class _EngineState extends State<Engine> {
+  late Isolate _isolate;
+
+  @override
+  void initState() {
+    super.initState();
+    _startEngine();
+  }
+
+  void _startEngine() async {
+    final receivePort = ReceivePort();
+    _isolate = await Isolate.spawn(engine, receivePort.sendPort);
+    receivePort.listen((message) {
+      if (message == 0) {
+        print('Engine finished successfully');
+      } else {
+        print('Engine encountered an error');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _isolate.kill(priority: Isolate.immediate);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
-        child: Text('Engine'),
+        child: Text('Engine is running...'),
       ),
     );
   }
